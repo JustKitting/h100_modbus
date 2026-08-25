@@ -1,0 +1,17 @@
+[workspace]
+resolver = "2"
+members = ["crates/h100-spindle"]
+
+[workspace.package]
+edition = "2021"
+license = "GPL-2.0-or-later"
+rust-version = "1.85"
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+codegen-units = 1
+lto = true
+overflow-checks = true
+panic = "abort"

@@ -120,8 +120,9 @@ Sources:
 
 ## Files
 
-- `src/component/`: the realtime LinuxCNC component declaration, its public
-  state-machine contract, and the separately compiled fail-stopped logic.
+- `rust/crates/h100-spindle/`: the native Rust LinuxCNC realtime component,
+  separated into HAL lifecycle/transport and pure fail-stopped sequencer
+  modules.
 - `src/protocol/`: no-I/O Modbus RTU framing, CRC, response validation,
   frequency conversion, and command gating.
 - `maps/live/`: the suspended `hm2_modbus` map used by the live LinuxCNC
@@ -130,8 +131,9 @@ Sources:
   exact compiled form. It contains STOP/zero but no RUN.
 - `maps/diagnostics/`: read-only status and single-request link maps, each with
   source and exact compiled form.
-- `tests/c/`: block-code, state-transition, boundary, reset, and exhaustive
-  invariant tests for the realtime sequencer.
+- The Rust crate tests every public HAL pin and parameter, every lifecycle
+  failure, block-code and state-transition boundaries, reset behavior, and an
+  exhaustive 122,880-case sequencer invariant matrix.
 - `tests/python/`: complete executable-line coverage for the pure protocol
   layer, including every invalid-frame and refusal path.
 - `diagnostics/pktuart/`: explicitly invoked hardware diagnostic sources and
@@ -140,17 +142,19 @@ Sources:
   forward-run test harness. A live run requires explicit frequency, spindle
   maximum, duration, and `--live`. The one-time `configure-400hz --live` path
   was run and verified stopped on 2026-08-24.
-- `scripts/build_release.sh`: builds the realtime component twice in isolated
-  directories, removes only nondeterministic debug/build-ID metadata, requires
-  byte-identical normalized results, and stages `target/release/h100_spindle.so`.
+- `scripts/build_release.sh`: builds the Rust realtime component twice in
+  isolated directories, removes only nondeterministic debug/build-ID metadata,
+  requires byte-identical normalized results, and stages
+  `target/release/h100_spindle.so`.
 - `scripts/verify.sh`: the single hardware-free release gate.
 
 ## Hardware-free verification
 
 Run `./scripts/verify.sh`. It locks the build to LinuxCNC 2.9.10, takes every
-compiler-observed sequencer branch outcome, covers every executable protocol
-line, rebuilds and byte-compares every `.mbccb`, builds the realtime module
-twice, and verifies the normalized module's architecture and RTAPI exports.
+sequencer and HAL-interface regression test, covers every executable protocol
+line, rebuilds and byte-compares every `.mbccb`, builds the Rust realtime
+module twice, and verifies the normalized module's architecture and RTAPI
+exports.
 It neither loads HAL nor opens Mesa or the VFD link.
 
 ## Source-verified spindle-control registers

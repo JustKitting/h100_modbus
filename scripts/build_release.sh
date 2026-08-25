@@ -2,7 +2,8 @@
 set -euo pipefail
 
 project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-component_dir="${project_dir}/src/component"
+rust_manifest="${project_dir}/rust/Cargo.toml"
+main_project="$(cd -- "${project_dir}/../linuxcnc_dmc2" && pwd)"
 release_dir="${project_dir}/target/release"
 release_module="${release_dir}/h100_spindle.so"
 
@@ -11,12 +12,9 @@ if [[ "$(linuxcnc_var LINUXCNCVERSION)" != "2.9.10" ]]; then
     exit 1
 fi
 
-for required_path in \
-    "${component_dir}/h100_spindle.comp" \
-    "${component_dir}/h100_spindle_logic.c" \
-    "${component_dir}/h100_spindle_logic.h"; do
+for required_path in "${rust_manifest}" "${project_dir}/rust/Cargo.lock"; do
     if [[ ! -f "${required_path}" ]]; then
-        echo "missing H100 component source: ${required_path}" >&2
+        echo "missing H100 Rust build input: ${required_path}" >&2
         exit 1
     fi
 done
@@ -34,19 +32,24 @@ trap cleanup EXIT
 build_normalized_module() {
     local build_dir="$1"
     local output_path="$2"
+    local cargo_target="${build_dir}/cargo-target"
+    local rust_flags
 
     mkdir -p -- "${build_dir}"
-    install -m 0644 "${component_dir}/h100_spindle.comp" "${build_dir}/"
-    install -m 0644 "${component_dir}/h100_spindle_logic.c" "${build_dir}/"
-    install -m 0644 "${component_dir}/h100_spindle_logic.h" "${build_dir}/"
-    (
-        cd -- "${build_dir}"
-        halcompile --compile h100_spindle.comp
-    )
+    rust_flags="-Dwarnings --remap-path-prefix=${project_dir}=/h100_modbus --remap-path-prefix=${main_project}=/linuxcnc_dmc2 --remap-path-prefix=${cargo_target}=/cargo-target"
+    env \
+        CARGO_INCREMENTAL=0 \
+        CARGO_TARGET_DIR="${cargo_target}" \
+        RUSTFLAGS="${rust_flags}" \
+        cargo build \
+            --manifest-path "${rust_manifest}" \
+            --workspace \
+            --release \
+            --locked
     objcopy \
         --strip-debug \
         --remove-section=.note.gnu.build-id \
-        "${build_dir}/h100_spindle.so" \
+        "${cargo_target}/release/libh100_spindle.so" \
         "${output_path}"
     chmod 0755 "${output_path}"
 }

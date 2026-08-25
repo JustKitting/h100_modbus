@@ -25,8 +25,9 @@ while IFS= read -r -d '' source_path; do
     fi
 done < <(
     find "${project_dir}" -type f \
-        \( -name '*.c' -o -name '*.h' -o -name '*.py' -o -name '*.sh' \) \
-        -not -path "${project_dir}/target/*" -print0
+        \( -name '*.rs' -o -name '*.c' -o -name '*.h' -o -name '*.py' -o -name '*.sh' \) \
+        -not -path "${project_dir}/target/*" \
+        -not -path "${project_dir}/rust/target/*" -print0
 )
 
 test_build_dir="$(mktemp -d /tmp/h100-tests.XXXXXX)"
@@ -36,59 +37,9 @@ cleanup() {
 }
 trap cleanup EXIT
 
-cp -a -- "${project_dir}/src" "${project_dir}/tests" "${test_build_dir}/"
-
-(
-    cd -- "${test_build_dir}"
-    common_flags=(
-        -std=c11 -O0 -g --coverage
-        -Wall -Wextra -Werror -pedantic
-        -I src/component -I tests/c
-    )
-    cc "${common_flags[@]}" \
-        -c src/component/h100_spindle_logic.c \
-        -o h100_spindle_logic.o
-    for source_path in \
-        tests/c/test_support.c \
-        tests/c/test_block_codes.c \
-        tests/c/test_state_machine.c \
-        tests/c/test_invariants.c \
-        tests/c/test_main.c; do
-        object_name="$(basename -- "${source_path}" .c).o"
-        cc "${common_flags[@]}" -c "${source_path}" -o "${object_name}"
-    done
-    cc --coverage ./*.o -lm -o h100_spindle_tests
-    ./h100_spindle_tests
-    coverage_output="$(gcov -b -c -o . src/component/h100_spindle_logic.c)"
-    printf '%s\n' "${coverage_output}"
-    if [[ "${coverage_output}" != *"Lines executed:100.00% of 201"* ]]; then
-        echo "H100 sequencer line coverage is not exactly 100%" >&2
-        exit 1
-    fi
-    if [[ "${coverage_output}" != *"Branches executed:100.00% of 215"* ]]; then
-        echo "H100 sequencer branch discovery is not exactly 100%" >&2
-        exit 1
-    fi
-    if [[ "${coverage_output}" != *"Taken at least once:100.00% of 215"* ]]; then
-        echo "at least one H100 sequencer branch outcome was not tested" >&2
-        exit 1
-    fi
-)
-
-optimized_test="${test_build_dir}/h100_spindle_tests_optimized"
-cc \
-    -std=c11 -O2 -Wall -Wextra -Werror -pedantic \
-    -fsanitize=undefined -fno-sanitize-recover=all \
-    -I "${project_dir}/src/component" \
-    -I "${project_dir}/tests/c" \
-    "${project_dir}/src/component/h100_spindle_logic.c" \
-    "${project_dir}/tests/c/test_support.c" \
-    "${project_dir}/tests/c/test_block_codes.c" \
-    "${project_dir}/tests/c/test_state_machine.c" \
-    "${project_dir}/tests/c/test_invariants.c" \
-    "${project_dir}/tests/c/test_main.c" \
-    -lm -o "${optimized_test}"
-"${optimized_test}"
+cargo fmt --manifest-path "${project_dir}/rust/Cargo.toml" -p h100-spindle -- --check
+env RUSTFLAGS=-Dwarnings \
+    cargo test --manifest-path "${project_dir}/rust/Cargo.toml" --workspace --locked
 
 python_trace_dir="${test_build_dir}/python-coverage"
 mkdir -p -- "${python_trace_dir}"
@@ -142,7 +93,8 @@ done < <(find "${project_dir}/maps" -type f -name '*.mbccb' -print0 | sort -z)
 
 if find "${project_dir}" -type d \
     \( -name __pycache__ -o -name .pytest_cache \) \
-    -not -path "${project_dir}/target/*" -print -quit | grep -q .; then
+    -not -path "${project_dir}/target/*" \
+    -not -path "${project_dir}/rust/target/*" -print -quit | grep -q .; then
     echo "generated Python cache exists in the H100 project" >&2
     exit 1
 fi

@@ -1,0 +1,14 @@
+[package]
+name = "h100-spindle"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+build = "build.rs"
+
+[lib]
+name = "h100_spindle"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+dmc2-hal-sys = { path = "../../../../linuxcnc_dmc2/rust/crates/dmc2-hal-sys" }
