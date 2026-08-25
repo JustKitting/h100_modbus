@@ -141,7 +141,7 @@ void rtapi_app_exit(void) {
 #define frame_count (*__comp_inst->frame_count)
 
 
-#line 20 "/home/kit/h100_modbus/pktuart_echo_diag.comp"
+#line 20 "diagnostics/pktuart/pktuart_echo_diag.comp"
 
 #include "rtapi.h"
 #include "hostmot2-serial.h"

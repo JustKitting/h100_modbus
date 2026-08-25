@@ -282,10 +282,6 @@ def decide_forward_command(
         return SpindleDecision(
             CONTROL_STOP, 0, False, "requested frequency exceeds configured maximum"
         )
-    if requested > configured_vfd_maximum:
-        return SpindleDecision(
-            CONTROL_STOP, 0, False, "requested frequency exceeds the H100 F005 limit"
-        )
 
     encoded = encode_frequency_hz(requested, f169=f169)
     return SpindleDecision(CONTROL_RUN, encoded, True, "forward run permitted")

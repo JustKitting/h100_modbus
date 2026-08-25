@@ -14,7 +14,7 @@
 
 - Board address: `192.168.1.121`.
 - Complete pre-change flash backup:
-  `../mesa_firmware_backups/7i95t_before_pktuart_2026-08-21.bin`
+  `../linuxcnc_dmc2/artifacts/firmware-backups/mesa/pre-pktuart/7i95t_before_pktuart_2026-08-21.bin`
 - Backup SHA-256:
   `63e951ff8e66df57175c8d933d2ad35bb507e6108fd781ec74202c167c5b522b`
 - Active firmware: official Mesa `7i95t_1pktv2d.bin`.
@@ -103,8 +103,8 @@
   8N1. No run, stop, direction, frequency-set, or parameter-write command was
   sent. HAL was fully unloaded after both captures.
 - Successful capture files:
-  - `captures/passive_20260821_111622/`
-  - `captures/readonly_20260821_111737/`
+  - `../linuxcnc_dmc2/artifacts/captures/spindle-modbus/passive_20260821_111622/`
+  - `../linuxcnc_dmc2/artifacts/captures/spindle-modbus/readonly_20260821_111737/`
 
 Sources:
 
@@ -120,31 +120,38 @@ Sources:
 
 ## Files
 
-- `h100-readonly.mbccs`: read-only status definition, including F004, F005,
-  F011, F014, F015, F024, F163-F165, and F169.
-- `h100-readonly.mbccb`: compiled version of that definition.
-- `h100-link-diagnostic.mbccs`: one-command read-only raw-link diagnostic.
-- `h100-link-diagnostic.mbccb`: compiled version of that diagnostic.
-- `h100-spindle.mbccs`: suspended H100 monitoring/control map for LinuxCNC's
-  `hm2_modbus` driver. The live LinuxCNC profile references this map and its
-  stopped 400 Hz preflight is verified.
-- `h100-spindle.mbccb`: compiled form of that map.
-- `h100-configure-400hz.mbccs`: one-time, stopped init-list writer for
-  F005=400.0 Hz followed by F004=400.0 Hz. It contains STOP/zero but no RUN,
-  and its periodic commands are read-only verification.
-- `h100-configure-400hz.mbccb`: compiled form of that one-time map.
-- `h100_spindle.comp`: realtime LinuxCNC/H100 command sequencer.
-- `h100_spindle_logic.h`: hardware-independent implementation of the exact
-  sequencer state machine.
-- `test_h100_spindle_logic.c`: offline tests for forward/reverse start, speed
-  change, stop, link loss, and unresolved configuration.
-- `h100_protocol.py`: no-I/O register constants, RTU framing, CRC validation,
-  frequency-unit conversion, and forward-run command gating.
-- `test_h100_protocol.py`: offline protocol and command-gating tests.
-- `spindle_control.py`: non-live-by-default status reader and finite forward-run
-  test harness. A live run requires explicit frequency, explicit spindle
-  maximum frequency, explicit duration, and `--live`. The one-time
-  `configure-400hz --live` path was run and verified stopped on 2026-08-24.
+- `src/component/`: the realtime LinuxCNC component declaration, its public
+  state-machine contract, and the separately compiled fail-stopped logic.
+- `src/protocol/`: no-I/O Modbus RTU framing, CRC, response validation,
+  frequency conversion, and command gating.
+- `maps/live/`: the suspended `hm2_modbus` map used by the live LinuxCNC
+  profile, with source and exact compiled form kept together.
+- `maps/commissioning/`: the stopped one-time F005/F004 400 Hz writer and its
+  exact compiled form. It contains STOP/zero but no RUN.
+- `maps/diagnostics/`: read-only status and single-request link maps, each with
+  source and exact compiled form.
+- `tests/c/`: block-code, state-transition, boundary, reset, and exhaustive
+  invariant tests for the realtime sequencer.
+- `tests/python/`: complete executable-line coverage for the pure protocol
+  layer, including every invalid-frame and refusal path.
+- `diagnostics/pktuart/`: explicitly invoked hardware diagnostic sources and
+  capture scripts. The hardware-free verifier only syntax-checks these files.
+- `tools/spindle_control.py`: non-live-by-default status reader and finite
+  forward-run test harness. A live run requires explicit frequency, spindle
+  maximum, duration, and `--live`. The one-time `configure-400hz --live` path
+  was run and verified stopped on 2026-08-24.
+- `scripts/build_release.sh`: builds the realtime component twice in isolated
+  directories, removes only nondeterministic debug/build-ID metadata, requires
+  byte-identical normalized results, and stages `target/release/h100_spindle.so`.
+- `scripts/verify.sh`: the single hardware-free release gate.
+
+## Hardware-free verification
+
+Run `./scripts/verify.sh`. It locks the build to LinuxCNC 2.9.10, takes every
+compiler-observed sequencer branch outcome, covers every executable protocol
+line, rebuilds and byte-compares every `.mbccb`, builds the realtime module
+twice, and verifies the normalized module's architecture and RTAPI exports.
+It neither loads HAL nor opens Mesa or the VFD link.
 
 ## Source-verified spindle-control registers
 

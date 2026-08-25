@@ -1,42 +1,7 @@
-#include "h100_spindle_logic.h"
+#include "test_support.h"
 
 #include <assert.h>
 #include <math.h>
-#include <stdio.h>
-
-static struct h100_spindle_input valid_input(void)
-{
-    struct h100_spindle_input input = {0};
-    input.i_control_mode_f001 = 2;
-    input.i_frequency_source_f002 = 2;
-    input.i_reference_f004_centihz = 4000;
-    input.i_maximum_f005_centihz = 4000;
-    input.i_panel_stop_f024 = 1;
-    input.i_slave_address_f163 = 1;
-    input.i_baud_selector_f164 = 2;
-    input.i_data_mode_f165 = 3;
-    input.i_frequency_decimals_f169 = 0;
-    return input;
-}
-
-static struct h100_spindle_config valid_config(void)
-{
-    struct h100_spindle_config config = {0};
-    config.c_rated_rpm = 24000.0;
-    config.c_minimum_rpm = 6000.0;
-    config.c_maximum_rpm = 24000.0;
-    config.c_expected_reference_f004_centihz = 4000;
-    config.c_expected_maximum_f005_centihz = 4000;
-    config.c_at_speed_tolerance_hz = 1.0;
-    return config;
-}
-
-static struct h100_spindle_context new_context(void)
-{
-    struct h100_spindle_context context = {0};
-    context.x_state = H100_STOPPING;
-    return context;
-}
 
 static void test_full_start_speed_change_and_stop(void)
 {
@@ -228,13 +193,11 @@ static void test_disabled_modbus_command_cannot_leave_stale_ready_state(void)
     assert(output.o_main_control == H100_CONTROL_STOP);
 }
 
-int main(void)
+void test_state_machine_suite(void)
 {
     test_full_start_speed_change_and_stop();
     test_reverse_start_and_stop();
     test_link_loss_during_run_stops_and_latches();
     test_unresolved_limits_refuse_without_idle_fault();
     test_disabled_modbus_command_cannot_leave_stale_ready_state();
-    puts("h100 spindle sequencer tests passed");
-    return 0;
 }

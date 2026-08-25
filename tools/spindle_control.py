@@ -18,9 +18,17 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-PENDANT_CNC_DIR = PROJECT_ROOT / "pendant_cnc"
+PENDANT_CNC_DIR = (
+    PROJECT_ROOT.parent
+    / "linuxcnc_dmc2"
+    / "reference"
+    / "legacy_controller"
+)
+PROTOCOL_DIR = PROJECT_ROOT / "src" / "protocol"
 if str(PENDANT_CNC_DIR) not in sys.path:
     sys.path.insert(0, str(PENDANT_CNC_DIR))
+if str(PROTOCOL_DIR) not in sys.path:
+    sys.path.insert(0, str(PROTOCOL_DIR))
 
 import hal
 
@@ -38,9 +46,11 @@ PKTUART_NAME = f"{BOARD_HAL_NAME}.pktuart.0"
 MODBUS_PREFIX = "hm2_modbus.0"
 DEVICE_PREFIX = f"{MODBUS_PREFIX}.h100"
 SERVO_PERIOD_NS = 1_000_000
-READ_ONLY_MAP = Path(__file__).with_name("h100-readonly.mbccb")
-CONTROL_MAP = Path(__file__).with_name("h100-spindle.mbccb")
-CONFIGURE_400HZ_MAP = Path(__file__).with_name("h100-configure-400hz.mbccb")
+READ_ONLY_MAP = PROJECT_ROOT / "maps" / "diagnostics" / "h100-readonly.mbccb"
+CONTROL_MAP = PROJECT_ROOT / "maps" / "live" / "h100-spindle.mbccb"
+CONFIGURE_400HZ_MAP = (
+    PROJECT_ROOT / "maps" / "commissioning" / "h100-configure-400hz.mbccb"
+)
 
 
 class SpindleControlError(RuntimeError):

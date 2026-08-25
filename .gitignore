@@ -4,4 +4,9 @@ __pycache__/
 *.o
 *.so
 *.core
+*.gcda
+*.gcno
+*.gcov
 
+artifacts/captures/
+target/

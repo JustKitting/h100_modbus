@@ -54,7 +54,7 @@ author "OpenAI Codex";
 description "Sequences frequency verification, documented forward/reverse operation, speed changes, and STOP-before-frequency-clear while refusing unresolved H100 configuration.";
 ;;
 
-#include "h100_spindle_logic.h"
+#include "h100_spindle_logic.c"
 
 static struct h100_spindle_context context = {
     H100_STOPPING, 0, 0, H100_BLOCK_NONE, 0, 0.0, 0
