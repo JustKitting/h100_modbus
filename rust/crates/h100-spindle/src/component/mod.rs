@@ -14,14 +14,38 @@ use self::registration::{publish_initial_values, register_interface};
 const COMPONENT_NAME: &[u8] = b"h100_spindle\0";
 const FUNCTION_NAME: &[u8] = b"h100-spindle\0";
 const HAL_EXIT_FAILURE_MESSAGE: &[u8] = b"h100_spindle: ERROR: hal_exit() failed\n\0";
-const ENOMEM: c_int = -12;
-const EINVAL: c_int = -22;
+const ENOMEM: c_int = hal::HalKnownErrno::OutOfMemory.raw();
+#[cfg(test)]
+const EINVAL: c_int = hal::HalKnownErrno::InvalidArgument.raw();
 
 static mut COMPONENT_ID: c_int = -1;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum StartupFailure {
+    Hal(hal::HalError),
+    Allocation,
+}
+
+impl StartupFailure {
+    const fn safe_return_code(self) -> c_int {
+        match self {
+            Self::Hal(error) => error.safe_return_code(),
+            Self::Allocation => ENOMEM,
+        }
+    }
+}
+
+impl From<hal::HalError> for StartupFailure {
+    fn from(error: hal::HalError) -> Self {
+        Self::Hal(error)
+    }
+}
+
 unsafe fn exit_component(component_id: c_int) {
-    let result = unsafe { hal::hal_exit(component_id) };
-    if result != 0 {
+    if hal::HalCall::Exit
+        .classify(unsafe { hal::hal_exit(component_id) })
+        .is_err()
+    {
         unsafe {
             hal::rtapi_print_msg(
                 hal::msg_level_t_RTAPI_MSG_ERR,
@@ -42,21 +66,19 @@ fn panic(_info: &core::panic::PanicInfo<'_>) -> ! {
 
 #[no_mangle]
 pub extern "C" fn rtapi_app_main() -> c_int {
-    let component_id = unsafe { hal::hal_init(COMPONENT_NAME.as_ptr().cast::<c_char>()) };
-    if component_id <= 0 {
-        return if component_id == 0 {
-            EINVAL
-        } else {
-            component_id
-        };
-    }
+    let component_id = match hal::HalCall::Init
+        .classify(unsafe { hal::hal_init(COMPONENT_NAME.as_ptr().cast::<c_char>()) })
+    {
+        Ok(component_id) => component_id,
+        Err(error) => return error.safe_return_code(),
+    };
     unsafe { COMPONENT_ID = component_id };
 
-    let result = (|| -> Result<(), c_int> {
+    let result = (|| -> Result<(), StartupFailure> {
         let component =
             unsafe { hal::hal_malloc(mem::size_of::<Component>() as c_long) }.cast::<Component>();
         if component.is_null() {
-            return Err(ENOMEM);
+            return Err(StartupFailure::Allocation);
         }
         unsafe {
             ptr::write(component, Component::new());
@@ -74,13 +96,8 @@ pub extern "C" fn rtapi_app_main() -> c_int {
                 component_id,
             )
         };
-        if exported != 0 {
-            return Err(exported);
-        }
-        let ready = unsafe { hal::hal_ready(component_id) };
-        if ready != 0 {
-            return Err(ready);
-        }
+        hal::HalCall::ExportFunct.classify(exported)?;
+        hal::HalCall::Ready.classify(unsafe { hal::hal_ready(component_id) })?;
         Ok(())
     })();
 
@@ -91,11 +108,7 @@ pub extern "C" fn rtapi_app_main() -> c_int {
                 exit_component(component_id);
                 COMPONENT_ID = -1;
             }
-            if error == 0 {
-                EINVAL
-            } else {
-                error
-            }
+            error.safe_return_code()
         }
     }
 }

@@ -621,11 +621,25 @@ fn every_lifecycle_failure_is_returned_and_cleaned_up() {
         assert_eq!(calls.exit, 1);
     }
 
+    reset_mock();
+    PLAN.lock().expect("plan lock").registration_failure = Some((0, 7));
+    assert_eq!(rtapi_app_main(), EINVAL);
+    assert_eq!(CALLS.lock().expect("call lock").registration, 1);
+    assert_eq!(CALLS.lock().expect("call lock").exit, 1);
+
     for (export_result, ready_result, expected) in [(-70, 0, -70), (0, -71, -71)] {
         reset_mock();
         PLAN.lock().expect("plan lock").export_result = export_result;
         PLAN.lock().expect("plan lock").ready_result = ready_result;
         assert_eq!(rtapi_app_main(), expected);
+        assert_eq!(CALLS.lock().expect("call lock").exit, 1);
+    }
+
+    for (export_result, ready_result) in [(7, 0), (0, 7)] {
+        reset_mock();
+        PLAN.lock().expect("plan lock").export_result = export_result;
+        PLAN.lock().expect("plan lock").ready_result = ready_result;
+        assert_eq!(rtapi_app_main(), EINVAL);
         assert_eq!(CALLS.lock().expect("call lock").exit, 1);
     }
 
