@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  H100 spindle register map for LinuxCNC's official hm2_modbus driver.
+
+  Communication starts suspended.  Loading the compiled file cannot transmit
+  until the caller explicitly sets hm2_modbus.0.suspend false.
+
+  The two write pins are raw, source-verified H100 register values.  A caller
+  must initialize given-frequency to 0 and main-control to 0x0008 (STOP) before
+  releasing suspend. It must then validate F001, F002, F004, F005, F011, F024,
+  F163-F165, F169, and the live VFD fault before requesting CONTROL_RUN
+  (0x0001). The command order is control first and frequency second; the
+  realtime sequencer holds STOP until a start frequency has been read back.
+-->
+<mesamodbus baudrate="19200" parity="N" stopbits="1" duplex="half"
+             interval="50000" suspend="true" writeflush="false">
+  <devices>
+    <device address="1" name="h100" />
+  </devices>
+  <commands>
+    <!-- F001/F002: control mode and frequency source. -->
+    <command device="h100" function="R_REGISTERS" address="0x0001"
+             modbustype="U_AB" haltype="U32" scale="false">
+      <pin name="control-mode-f001" />
+      <pin name="frequency-source-f002" />
+    </command>
+
+    <!-- F004/F005: 0.1 Hz units on this four-digit H100; raw 4000 = 400.0 Hz. -->
+    <command device="h100" function="R_REGISTERS" address="0x0004"
+             modbustype="U_AB" haltype="U32" scale="false">
+      <pin name="reference-f004-centihz" />
+      <pin name="maximum-f005-centihz" />
+    </command>
+
+    <!-- F014/F015: acceleration/deceleration time, 0.1 second units. -->
+    <command device="h100" function="R_REGISTERS" address="0x000E"
+             modbustype="U_AB" haltype="U32" scale="false">
+      <pin name="accel-f014-deciseconds" />
+      <pin name="decel-f015-deciseconds" />
+    </command>
+
+    <!-- F011: 0.1 Hz units on this four-digit H100. -->
+    <command device="h100" function="R_REGISTERS" address="0x000B"
+             modbustype="U_AB" haltype="U32" scale="false">
+      <pin name="lower-limit-f011-centihz" />
+    </command>
+
+    <!-- F024=1 keeps the panel STOP key valid in communication mode. -->
+    <command device="h100" function="R_REGISTERS" address="0x0018"
+             modbustype="U_AB" haltype="U32" scale="false">
+      <pin name="panel-stop-f024" />
+    </command>
+
+    <!-- F163/F164/F165: slave address, baud selector, and RTU/data mode. -->
+    <command device="h100" function="R_REGISTERS" address="0x00A3"
+             modbustype="U_AB" haltype="U32" scale="false">
+      <pin name="slave-address-f163" />
+      <pin name="baud-selector-f164" />
+      <pin name="data-mode-f165" />
+    </command>
+
+    <!-- F169 controls whether 0201H is in 0.1 Hz or 0.01 Hz units. -->
+    <command device="h100" function="R_REGISTERS" address="0x00A9"
+             modbustype="U_AB" haltype="U32" scale="false">
+      <pin name="frequency-decimals-f169" />
+    </command>
+
+    <!--
+      Input registers 0000H..0002H. This exact three-register span is the
+      proven H100 response size; requesting through 0006H made this drive
+      return only 8 data bytes while hm2_modbus correctly expected 14.
+    -->
+    <command device="h100" function="R_INPUTREGS" address="0x0000"
+             modbustype="U_AB" haltype="U32" scale="false">
+      <pin name="output-frequency" />
+      <pin name="set-frequency" />
+      <pin name="output-current" />
+    </command>
+
+    <!-- Input register 000AH: current H100 fault code. -->
+    <command device="h100" function="R_INPUTREGS" address="0x000A"
+             modbustype="U_AB" haltype="U32" scale="false">
+      <pin name="current-fault" />
+    </command>
+
+    <!-- Holding register 0210H mirrors H100 operating-state bits. -->
+    <command device="h100" function="R_REGISTERS" address="0x0210"
+             modbustype="U_AB" haltype="U32" scale="false">
+      <pin name="main-status" />
+    </command>
+
+    <!-- Exact raw readback of the commanded 0201H frequency value. -->
+    <command device="h100" function="R_REGISTERS" address="0x0201"
+             modbustype="U_AB" haltype="U32" scale="false">
+      <pin name="given-frequency-readback" />
+    </command>
+
+    <!--
+      The realtime sequencer holds STOP while it writes and verifies a start
+      frequency.  Keeping the control write first also guarantees that a stop
+      transition is transmitted before the sequencer later clears frequency.
+    -->
+    <command device="h100" function="W_REGISTER" address="0x0200"
+             modbustype="U_AB" haltype="U32" scale="false"
+             writeflush="false">
+      <pin name="main-control" />
+    </command>
+
+    <command device="h100" function="W_REGISTER" address="0x0201"
+             modbustype="U_AB" haltype="U32" scale="false"
+             writeflush="false">
+      <pin name="given-frequency" />
+    </command>
+  </commands>
+</mesamodbus>

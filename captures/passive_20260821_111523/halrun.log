@@ -1,0 +1,72 @@
+Note: Using POSIX realtime
+hm2: loading Mesa HostMot2 driver version 0.15
+hm2_eth: loading Mesa AnyIO HostMot2 ethernet driver version 0.2
+hm2_eth: 192.168.1.121: INFO: Hardware address (MAC): 00:60:1b:15:82:53
+hm2_eth: discovered 7I95T
+hm2/hm2_7i95.0: Low Level init 0.15
+hm2/hm2_7i95.0: created PktUART Interface function hm2_7i95.0.pktuart.0.
+hm2/hm2_7i95.0: Smart Serial Firmware Version 43
+hm2/hm2_7i95.0: 58 I/O Pins used:
+hm2/hm2_7i95.0:     IO Pin 000 (TB3-02/TB3-03): IOPort
+hm2/hm2_7i95.0:     IO Pin 001 (TB3-04/TB3-05): IOPort
+hm2/hm2_7i95.0:     IO Pin 002 (TB3-08/TB3-09): IOPort
+hm2/hm2_7i95.0:     IO Pin 003 (TB3-10/TB3-11): IOPort
+hm2/hm2_7i95.0:     IO Pin 004 (TB3-14/TB3-15): IOPort
+hm2/hm2_7i95.0:     IO Pin 005 (TB3-16/TB3-17): IOPort
+hm2/hm2_7i95.0:     IO Pin 006 (TB3-20/TB3-21): IOPort
+hm2/hm2_7i95.0:     IO Pin 007 (TB3-22/TB3-23): IOPort
+hm2/hm2_7i95.0:     IO Pin 008 (TB4-02/TB4-03): IOPort
+hm2/hm2_7i95.0:     IO Pin 009 (TB4-04/TB4-05): IOPort
+hm2/hm2_7i95.0:     IO Pin 010 (TB4-08/TB4-09): IOPort
+hm2/hm2_7i95.0:     IO Pin 011 (TB4-10/TB4-11): IOPort
+hm2/hm2_7i95.0:     IO Pin 012 (TB4-14/TB4-15): IOPort
+hm2/hm2_7i95.0:     IO Pin 013 (TB4-16/TB4-17): IOPort
+hm2/hm2_7i95.0:     IO Pin 014 (TB3-16/TB3-17): IOPort
+hm2/hm2_7i95.0:     IO Pin 015 (TB4-20/TB4-21): PktUART Receive Channel #0, pin RX Data (Input)
+hm2/hm2_7i95.0:     IO Pin 016 (TB4-22/TB4-23): PktUART Transmit Channel #0, pin TX Data (Output)
+hm2/hm2_7i95.0:     IO Pin 017 (TB4-22/TB4-23): PktUART Transmit Channel #0, pin Drv Enable (Output)
+hm2/hm2_7i95.0:     IO Pin 018 (TB1-01/TB1-09): IOPort
+hm2/hm2_7i95.0:     IO Pin 019 (TB1-04/TB1-12): IOPort
+hm2/hm2_7i95.0:     IO Pin 020 (TB1-07/TB1-15): IOPort
+hm2/hm2_7i95.0:     IO Pin 021 (TB1-17/TB2-01): IOPort
+hm2/hm2_7i95.0:     IO Pin 022 (TB1-20/TB2-04): IOPort
+hm2/hm2_7i95.0:     IO Pin 023 (TB1-23/TB2-07): IOPort
+hm2/hm2_7i95.0:     IO Pin 024 (TB2-09/TB2-17): IOPort
+hm2/hm2_7i95.0:     IO Pin 025 (TB2-12/TB2-20): IOPort
+hm2/hm2_7i95.0:     IO Pin 026 (TB2-15/TB2-23): IOPort
+hm2/hm2_7i95.0:     IO Pin 027 (Internal EncMux): IOPort
+hm2/hm2_7i95.0:     IO Pin 028 (Internal InMux0): IOPort
+hm2/hm2_7i95.0:     IO Pin 029 (Internal InMux1): IOPort
+hm2/hm2_7i95.0:     IO Pin 030 (Internal InMux2): IOPort
+hm2/hm2_7i95.0:     IO Pin 031 (Internal InMux3): IOPort
+hm2/hm2_7i95.0:     IO Pin 032 (Internal InMux4): IOPort
+hm2/hm2_7i95.0:     IO Pin 033 (Internal InMuxData): IOPort
+hm2/hm2_7i95.0:     IO Pin 034 (TB5-13/TB5-14): IOPort
+hm2/hm2_7i95.0:     IO Pin 035 (TB5-15/TB5-16): IOPort
+hm2/hm2_7i95.0:     IO Pin 036 (TB5-17/TB5-18): IOPort
+hm2/hm2_7i95.0:     IO Pin 037 (TB5-19/TB5-20): IOPort
+hm2/hm2_7i95.0:     IO Pin 038 (TB5-21/TB5-22): IOPort
+hm2/hm2_7i95.0:     IO Pin 039 (TB5-23/TB5-24): IOPort
+hm2/hm2_7i95.0:     IO Pin 040 (internal): IOPort
+hm2/hm2_7i95.0:     IO Pin 041 (P1-01/DB25-01): IOPort
+hm2/hm2_7i95.0:     IO Pin 042 (P1-02/DB25-14): IOPort
+hm2/hm2_7i95.0:     IO Pin 043 (P1-03/DB25-02): IOPort
+hm2/hm2_7i95.0:     IO Pin 044 (P1-04/DB25-15): IOPort
+hm2/hm2_7i95.0:     IO Pin 045 (P1-05/DB25-03): IOPort
+hm2/hm2_7i95.0:     IO Pin 046 (P1-06/DB25-16): IOPort
+hm2/hm2_7i95.0:     IO Pin 047 (P1-07/DB25-04): IOPort
+hm2/hm2_7i95.0:     IO Pin 048 (P1-08/DB25-17): IOPort
+hm2/hm2_7i95.0:     IO Pin 049 (P1-09/DB25-05): IOPort
+hm2/hm2_7i95.0:     IO Pin 050 (P1-11/DB25-06): IOPort
+hm2/hm2_7i95.0:     IO Pin 051 (P1-13/DB25-07): IOPort
+hm2/hm2_7i95.0:     IO Pin 052 (P1-15/DB25-08): IOPort
+hm2/hm2_7i95.0:     IO Pin 053 (P1-17/DB25-09): IOPort
+hm2/hm2_7i95.0:     IO Pin 054 (P1-19/DB25-10): IOPort
+hm2/hm2_7i95.0:     IO Pin 055 (P1-21/DB25-11): IOPort
+hm2/hm2_7i95.0:     IO Pin 056 (P1-23/DB25-12): IOPort
+hm2/hm2_7i95.0:     IO Pin 057 (P1-25/DB25-13): IOPort
+hm2/hm2_7i95.0: registered
+hm2_eth: in hm2_eth_reset
+hm2_eth: HostMot2 ethernet driver unloaded
+hm2: unloading
+Note: Using POSIX realtime

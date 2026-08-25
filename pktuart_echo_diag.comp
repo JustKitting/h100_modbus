@@ -1,0 +1,244 @@
+component pktuart_echo_diag "One-shot Mesa PktUART self-echo and reply diagnostic";
+
+option singleton yes;
+
+pin in bit trigger = false "Rising edge starts exactly one diagnostic request";
+pin in bit send_request = true "True sends the one read request; false performs a passive idle-line capture";
+pin out bit done = false "Set after all captured frames have been reported";
+pin out s32 result = 0 "0 waiting, 1 capture complete, negative on setup/send failure";
+pin out u32 state = 0 "Internal diagnostic state";
+pin out u32 rx_status = 0 "Raw PktUART RX status";
+pin out u32 tx_status = 0 "Raw PktUART TX status";
+pin out u32 frame_count = 0 "Number of received frames reported by PktUART";
+
+function _;
+
+license "GPL";
+author "OpenAI Codex";
+description "Clears PktUART, disables only receive-during-transmit masking, and logs either a passive idle capture or one Modbus function 04 request plus replies.";
+;;
+
+#include "rtapi.h"
+#include "hostmot2-serial.h"
+#include <string.h>
+
+#define PORT_NAME "hm2_7i95.0.pktuart.0"
+#define WAIT_AFTER_SEND_CYCLES 150
+#define MAX_CAPTURE_FRAMES 16
+#define MAX_CAPTURE_BYTES 64
+
+static const rtapi_u8 request[8] = {
+    0x01, 0x04, 0x00, 0x00, 0x00, 0x01, 0x31, 0xCA
+};
+
+static int stage;
+static int cycles;
+static int current_frame;
+static int pending_bytes;
+static int trigger_seen;
+static rtapi_u32 sizes[MAX_CAPTURE_FRAMES];
+static rtapi_u32 rx_words[(MAX_CAPTURE_BYTES + 3) / 4];
+
+static void print_frame(int index, int bytes, rtapi_u32 raw_size)
+{
+    int i;
+
+    rtapi_print_msg(RTAPI_MSG_ERR,
+        "PKTUART_CAPTURE frame=%d size_word=0x%08X bytes=%d data=",
+        index, raw_size, bytes);
+    for (i = 0; i < bytes; i++) {
+        rtapi_u8 value = (rx_words[i / 4] >> ((i % 4) * 8)) & 0xFF;
+        rtapi_print_msg(RTAPI_MSG_ERR, "%02X%s", value,
+                        i + 1 == bytes ? "" : " ");
+    }
+    rtapi_print_msg(RTAPI_MSG_ERR, "\n");
+}
+
+FUNCTION(_)
+{
+    rtapi_u8 frames;
+    rtapi_u16 request_size;
+    int retval;
+    int count;
+    hm2_pktuart_config_t rx_config;
+    hm2_pktuart_config_t tx_config;
+
+    rx_status = hm2_pktuart_get_rx_status(PORT_NAME);
+    tx_status = hm2_pktuart_get_tx_status(PORT_NAME);
+    state = stage;
+
+    if (!trigger) {
+        trigger_seen = 0;
+    }
+
+    switch (stage) {
+    case 0:
+        if (!trigger || trigger_seen) {
+            break;
+        }
+        trigger_seen = 1;
+        done = 0;
+        result = 0;
+        frame_count = 0;
+        cycles = 0;
+        current_frame = 0;
+        pending_bytes = 0;
+        memset(sizes, 0, sizeof(sizes));
+        memset(rx_words, 0, sizeof(rx_words));
+
+        hm2_pktuart_reset(PORT_NAME);
+
+        memset(&rx_config, 0, sizeof(rx_config));
+        rx_config.baudrate = 19200;
+        rx_config.filterrate = 38400;
+        rx_config.ifdelay = 15;
+        rx_config.flags = HM2_PKTUART_CONFIG_RXEN
+                        | HM2_PKTUART_CONFIG_FLUSH
+                        | HM2_PKTUART_CONFIG_FORCECONFIG;
+
+        memset(&tx_config, 0, sizeof(tx_config));
+        tx_config.baudrate = 19200;
+        tx_config.drivedelay = 0;
+        tx_config.ifdelay = 20;
+        tx_config.flags = HM2_PKTUART_CONFIG_DRIVEEN
+                        | HM2_PKTUART_CONFIG_DRIVEAUTO
+                        | HM2_PKTUART_CONFIG_FLUSH
+                        | HM2_PKTUART_CONFIG_FORCECONFIG;
+
+        retval = hm2_pktuart_config(PORT_NAME, &rx_config, &tx_config, 0);
+        if (retval < 0) {
+            rtapi_print_msg(RTAPI_MSG_ERR,
+                "PKTUART_CAPTURE setup_failed=%d\n", retval);
+            result = retval;
+            done = 1;
+            stage = 7;
+            break;
+        }
+
+        rtapi_print_msg(RTAPI_MSG_ERR,
+            "PKTUART_CAPTURE configured port=%s version=%d baud=19200 framing=8N1 rx_mask=off request=01 04 00 00 00 01 31 CA\n",
+            PORT_NAME, hm2_pktuart_get_version(PORT_NAME));
+        stage = 1;
+        break;
+
+    case 1:
+        if (++cycles < 5) {
+            break;
+        }
+        if (!send_request) {
+            rtapi_print_msg(RTAPI_MSG_ERR,
+                "PKTUART_CAPTURE passive_listen_only transmitted_bytes=0\n");
+            cycles = 0;
+            stage = 2;
+            break;
+        }
+        frames = 1;
+        request_size = sizeof(request);
+        retval = hm2_pktuart_send(PORT_NAME, request, &frames, &request_size);
+        if (retval < 0) {
+            rtapi_print_msg(RTAPI_MSG_ERR,
+                "PKTUART_CAPTURE send_failed=%d\n", retval);
+            result = retval;
+            done = 1;
+            stage = 7;
+            break;
+        }
+        rtapi_print_msg(RTAPI_MSG_ERR,
+            "PKTUART_CAPTURE sent_once bytes=8 request=01 04 00 00 00 01 31 CA\n");
+        cycles = 0;
+        stage = 2;
+        break;
+
+    case 2:
+        if (++cycles < WAIT_AFTER_SEND_CYCLES) {
+            break;
+        }
+        frame_count = (rx_status >> 16) & 0x1F;
+        rtapi_print_msg(RTAPI_MSG_ERR,
+            "PKTUART_CAPTURE collection_end rx_status=0x%08X tx_status=0x%08X frames=%u\n",
+            rx_status, tx_status, frame_count);
+        if (frame_count == 0) {
+            if (rx_status & (HM2_PKTUART_RXMODE_ERRORPARITY
+                           | HM2_PKTUART_RXMODE_ERRORRCFIFO
+                           | HM2_PKTUART_RXMODE_ERROROVERRUN
+                           | HM2_PKTUART_RXMODE_ERRORSTARTBIT)) {
+                result = -2;
+                rtapi_print_msg(RTAPI_MSG_ERR,
+                    "PKTUART_CAPTURE no_complete_frames receiver_error_bits=0x%02X\n",
+                    rx_status & 0x33);
+            } else {
+                result = 1;
+                rtapi_print_msg(RTAPI_MSG_ERR,
+                    "PKTUART_CAPTURE no_complete_frames receiver_error_bits=0x00\n");
+            }
+            done = 1;
+            stage = 7;
+            break;
+        }
+        memset(sizes, 0, sizeof(sizes));
+        retval = hm2_pktuart_queue_get_frame_sizes(PORT_NAME, sizes);
+        if (retval < 0) {
+            rtapi_print_msg(RTAPI_MSG_ERR,
+                "PKTUART_CAPTURE frame_size_read_failed=%d\n", retval);
+            result = retval;
+            done = 1;
+            stage = 7;
+            break;
+        }
+        stage = 3;
+        break;
+
+    case 3:
+        rtapi_print_msg(RTAPI_MSG_ERR,
+            "PKTUART_CAPTURE sizes=0x%08X 0x%08X 0x%08X 0x%08X\n",
+            sizes[0], sizes[1], sizes[2], sizes[3]);
+        current_frame = 0;
+        stage = 4;
+        break;
+
+    case 4:
+        if (current_frame >= MAX_CAPTURE_FRAMES || sizes[current_frame] == 0) {
+            result = 1;
+            done = 1;
+            stage = 7;
+            rtapi_print_msg(RTAPI_MSG_ERR,
+                "PKTUART_CAPTURE complete frames=%u final_rx_status=0x%08X\n",
+                frame_count, rx_status);
+            break;
+        }
+
+        count = sizes[current_frame] & 0x3FF;
+        if (count > MAX_CAPTURE_BYTES) {
+            count = MAX_CAPTURE_BYTES;
+        }
+        pending_bytes = count;
+        memset(rx_words, 0, sizeof(rx_words));
+        retval = hm2_pktuart_queue_read_data(PORT_NAME, rx_words, count);
+        if (retval < 0) {
+            rtapi_print_msg(RTAPI_MSG_ERR,
+                "PKTUART_CAPTURE frame_data_read_failed frame=%d error=%d\n",
+                current_frame, retval);
+            result = retval;
+            done = 1;
+            stage = 7;
+            break;
+        }
+        stage = 5;
+        break;
+
+    case 5:
+        print_frame(current_frame, pending_bytes, sizes[current_frame]);
+        current_frame++;
+        stage = 4;
+        break;
+
+    case 7:
+        break;
+
+    default:
+        result = -99;
+        done = 1;
+        stage = 7;
+        break;
+    }
+}

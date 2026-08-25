@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  One-time stopped configuration for the stock 24,000 RPM DMC2 Mini spindle.
+
+  The init list has no RUN command. It first sends STOP and zero commanded
+  frequency, raises the maximum from 50.0 to 400.0 Hz, then raises the motor
+  reference from 50.0 to 400.0 Hz. Each EEPROM parameter is written exactly
+  once per load. The periodic command list is read-only and verifies the
+  result. Raw 4000 is 400.0 Hz on this installed four-digit H100.
+-->
+<mesamodbus baudrate="19200" parity="N" stopbits="1" duplex="half"
+             interval="100000" suspend="true">
+  <devices>
+    <device address="1" name="h100" />
+  </devices>
+  <initlist>
+    <command device="h100" function="W_REGISTER" address="0x0200">
+      <data value="0x0008" />
+    </command>
+    <command device="h100" function="W_REGISTER" address="0x0201">
+      <data value="0" />
+    </command>
+    <command delay="200000" />
+    <!-- Raise the limiting value first so F004 cannot exceed F005. -->
+    <command device="h100" function="W_REGISTER" address="0x0005">
+      <data value="4000" />
+    </command>
+    <command delay="200000" />
+    <command device="h100" function="W_REGISTER" address="0x0004">
+      <data value="4000" />
+    </command>
+    <command delay="500000" />
+  </initlist>
+  <commands>
+    <command device="h100" function="R_INPUTREGS" address="0x0000"
+             modbustype="U_AB" haltype="U32" scale="0">
+      <pin name="output-frequency" />
+      <pin name="set-frequency" />
+      <pin name="output-current" />
+    </command>
+    <command device="h100" function="R_INPUTREGS" address="0x000A"
+             modbustype="U_AB" haltype="U32" scale="0">
+      <pin name="current-fault" />
+    </command>
+    <command device="h100" function="R_REGISTERS" address="0x0001"
+             modbustype="U_AB" haltype="U32" scale="0">
+      <pin name="control-mode" />
+      <pin name="frequency-source" />
+    </command>
+    <command device="h100" function="R_REGISTERS" address="0x0004"
+             modbustype="U_AB" haltype="U32" scale="0">
+      <pin name="reference-f004-centihz" />
+      <pin name="maximum-f005-centihz" />
+    </command>
+    <command device="h100" function="R_REGISTERS" address="0x000E"
+             modbustype="U_AB" haltype="U32" scale="0">
+      <pin name="accel-f014-deciseconds" />
+      <pin name="decel-f015-deciseconds" />
+    </command>
+    <command device="h100" function="R_REGISTERS" address="0x000B"
+             modbustype="U_AB" haltype="U32" scale="0">
+      <pin name="lower-limit-f011-centihz" />
+    </command>
+    <command device="h100" function="R_REGISTERS" address="0x0018"
+             modbustype="U_AB" haltype="U32" scale="0">
+      <pin name="panel-stop-f024" />
+    </command>
+    <command device="h100" function="R_REGISTERS" address="0x008C"
+             modbustype="U_AB" haltype="U32" scale="0">
+      <pin name="motor-power-f140" />
+      <pin name="motor-voltage-f141" />
+      <pin name="motor-current-f142" />
+      <pin name="motor-poles-f143" />
+      <pin name="motor-speed-f144" />
+    </command>
+    <command device="h100" function="R_REGISTERS" address="0x00A3"
+             modbustype="U_AB" haltype="U32" scale="0">
+      <pin name="slave-address" />
+      <pin name="baud-selector" />
+      <pin name="data-mode" />
+    </command>
+    <command device="h100" function="R_REGISTERS" address="0x00A9"
+             modbustype="U_AB" haltype="U32" scale="0">
+      <pin name="frequency-decimals" />
+    </command>
+    <command device="h100" function="R_REGISTERS" address="0x0210"
+             modbustype="U_AB" haltype="U32" scale="0">
+      <pin name="main-status" />
+    </command>
+  </commands>
+</mesamodbus>

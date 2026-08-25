@@ -1,0 +1,9 @@
+mode=passive
+transmitted_bytes=0
+send_request_readback=FALSE
+done=TRUE
+result=-19
+state=7
+rx_status=0
+tx_status=0
+frame_count=0

@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Read-only H100 VFD communication preflight.
+
+  Every command below is a Modbus read (function 03 or 04). This file has no
+  initialization commands and no write commands.
+-->
+<mesamodbus baudrate="19200" parity="N" stopbits="1" duplex="half"
+             interval="100000" suspend="true">
+  <devices>
+    <device address="1" name="h100" />
+  </devices>
+  <commands>
+    <!-- H100 input registers 0000H..0002H: frequency/frequency/current. -->
+    <command device="h100" function="R_INPUTREGS" address="0x0000"
+             modbustype="U_AB" haltype="U32" scale="0">
+      <pin name="output-frequency" />
+      <pin name="set-frequency" />
+      <pin name="output-current" />
+    </command>
+
+    <!-- H100 input register 000AH: current fault code. -->
+    <command device="h100" function="R_INPUTREGS" address="0x000A"
+             modbustype="U_AB" haltype="U32" scale="0">
+      <pin name="current-fault" />
+    </command>
+
+    <!-- H100 F001/F002: control mode and frequency source. -->
+    <command device="h100" function="R_REGISTERS" address="0x0001"
+             modbustype="U_AB" haltype="U32" scale="0">
+      <pin name="control-mode" />
+      <pin name="frequency-source" />
+    </command>
+
+    <!-- F004/F005: 0.1 Hz units on this four-digit H100. -->
+    <command device="h100" function="R_REGISTERS" address="0x0004"
+             modbustype="U_AB" haltype="U32" scale="0">
+      <pin name="reference-f004-centihz" />
+      <pin name="maximum-f005-centihz" />
+    </command>
+
+    <!-- F014/F015: acceleration/deceleration, 0.1 second units. -->
+    <command device="h100" function="R_REGISTERS" address="0x000E"
+             modbustype="U_AB" haltype="U32" scale="0">
+      <pin name="accel-f014-deciseconds" />
+      <pin name="decel-f015-deciseconds" />
+    </command>
+
+    <!-- F011: 0.1 Hz units on this four-digit H100. -->
+    <command device="h100" function="R_REGISTERS" address="0x000B"
+             modbustype="U_AB" haltype="U32" scale="0">
+      <pin name="lower-limit-f011-centihz" />
+    </command>
+
+    <!-- F024: whether the panel STOP key remains valid in communication mode. -->
+    <command device="h100" function="R_REGISTERS" address="0x0018"
+             modbustype="U_AB" haltype="U32" scale="0">
+      <pin name="panel-stop-f024" />
+    </command>
+
+    <!-- H100 F163/F164/F165: address, baud selector, RTU/data mode. -->
+    <command device="h100" function="R_REGISTERS" address="0x00A3"
+             modbustype="U_AB" haltype="U32" scale="0">
+      <pin name="slave-address" />
+      <pin name="baud-selector" />
+      <pin name="data-mode" />
+    </command>
+
+    <!-- H100 F169: units used by the 0201H given-frequency register. -->
+    <command device="h100" function="R_REGISTERS" address="0x00A9"
+             modbustype="U_AB" haltype="U32" scale="0">
+      <pin name="frequency-decimals" />
+    </command>
+
+    <!-- H100 0210H: main operating-state bit field. -->
+    <command device="h100" function="R_REGISTERS" address="0x0210"
+             modbustype="U_AB" haltype="U32" scale="0">
+      <pin name="main-status" />
+    </command>
+  </commands>
+</mesamodbus>

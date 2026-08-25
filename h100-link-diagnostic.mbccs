@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- One read-only request used to inspect the raw RS-485 response. -->
+<mesamodbus baudrate="19200" parity="N" stopbits="1" duplex="half"
+             interval="1000000" suspend="true">
+  <devices>
+    <device address="1" name="h100" />
+  </devices>
+  <commands>
+    <command device="h100" function="R_INPUTREGS" address="0x0000"
+             modbustype="U_AB" haltype="U32" scale="0">
+      <pin name="output-frequency" />
+    </command>
+  </commands>
+</mesamodbus>
