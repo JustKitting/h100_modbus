@@ -1,6 +1,6 @@
 use super::types::{
-    BlockCode, Config, Context, Input, Output, State, CONTROL_FORWARD, CONTROL_REVERSE,
-    CONTROL_STOP, STATUS_IN_OPERATION,
+    BlockCode, BlockEvidence, BlockRecord, Config, Context, Input, MainStatusBit, Output, State,
+    CONTROL_FORWARD, CONTROL_REVERSE, CONTROL_STOP, STATUS_IN_OPERATION,
 };
 
 const PARAMETER_UNITS_PER_HZ: f64 = 10.0;
@@ -62,33 +62,68 @@ pub fn configuration_block(input: Input, config: Config) -> BlockCode {
 
 impl Context {
     fn set_state(&mut self, state: State) {
-        self.state = state as i32;
+        self.state = state.wire_code();
     }
 
     fn state(&self) -> State {
         State::from_raw(self.state).expect("state is validated before use")
     }
 
-    fn latch(&mut self, code: BlockCode) {
+    fn latch(&mut self, code: BlockCode, evidence: BlockEvidence) {
+        if !self.fault_latched {
+            self.fault_record = Some(BlockRecord { code, evidence });
+            self.fault_code = code.wire_code();
+        }
         self.fault_latched = true;
-        self.fault_code = code as u32;
         self.set_state(State::Stopping);
     }
 
-    fn validate_internal_state(&mut self) {
+    fn validate_internal_state(
+        &mut self,
+        input: Input,
+        config: Config,
+        state_before: i32,
+        fault_latched_before: bool,
+        fault_code_before: u32,
+        fault_record_code_before: Option<BlockCode>,
+    ) -> bool {
         let state = State::from_raw(self.state);
-        let fault_consistent = self.fault_latched == (self.fault_code != BlockCode::None as u32);
+        let decoded_fault = BlockCode::from_wire_code(self.fault_code);
+        let fault_consistent = if self.fault_latched {
+            decoded_fault.is_some_and(|code| code != BlockCode::None)
+                && self
+                    .fault_record
+                    .is_some_and(|record| Some(record.code) == decoded_fault)
+        } else {
+            self.fault_code == BlockCode::None.wire_code() && self.fault_record.is_none()
+        };
         if state.is_none() || !fault_consistent {
             self.fault_latched = true;
-            if self.fault_code == BlockCode::None as u32 || state.is_some() {
-                self.fault_code = BlockCode::InternalState as u32;
-            }
+            self.fault_code = BlockCode::InternalState.wire_code();
+            self.fault_record = Some(BlockRecord {
+                code: BlockCode::InternalState,
+                evidence: BlockEvidence::capture(
+                    input,
+                    config,
+                    state_before,
+                    fault_latched_before,
+                    fault_code_before,
+                    fault_record_code_before,
+                ),
+            });
             self.set_state(State::Fault);
+            return false;
         }
+        true
     }
 
     pub fn step(&mut self, input: Input, config: Config) -> Output {
+        let state_before = self.state;
+        let fault_latched_before = self.fault_latched;
+        let fault_code_before = self.fault_code;
+        let fault_record_code_before = self.fault_record.map(|record| record.code);
         let is_running = input.main_status & STATUS_IN_OPERATION != 0;
+        let vfd_reverse_selected = input.main_status & MainStatusBit::Reverse.wire_code() != 0;
         let stopped_feedback = !is_running && input.output_frequency_decihz == 0;
         let actual_hz = input.output_frequency_decihz as f64 / 10.0;
         let mut output = Output {
@@ -103,6 +138,9 @@ impl Context {
             fault_code: 0,
             block_code: 0,
             state: 0,
+            fault_record: None,
+            block_record: None,
+            state_kind: State::Stopped,
             speed_feedback_rpm: 0.0,
             target_frequency_hz: 0.0,
         };
@@ -114,20 +152,29 @@ impl Context {
         let base_reason = configuration_block(input, config);
         let mut run_reason = base_reason;
         let requested_reverse = input.reverse_request && !input.forward_request;
+        let direction_feedback_matches = vfd_reverse_selected == !self.held_reverse;
         let reset_rising = input.reset && !self.previous_reset;
         self.previous_reset = input.reset;
-        if reset_rising
+        let internal_state_valid = self.validate_internal_state(
+            input,
+            config,
+            state_before,
+            fault_latched_before,
+            fault_code_before,
+            fault_record_code_before,
+        );
+        if internal_state_valid
+            && reset_rising
             && !input.run_request
             && stopped_feedback
             && !input.link_fault
             && input.current_fault == 0
         {
             self.fault_latched = false;
-            self.fault_code = BlockCode::None as u32;
+            self.fault_code = BlockCode::None.wire_code();
+            self.fault_record = None;
             self.set_state(State::Stopping);
         }
-
-        self.validate_internal_state();
         if self.fault_latched && !matches!(self.state(), State::Stopping | State::Fault) {
             self.set_state(State::Stopping);
         }
@@ -185,12 +232,54 @@ impl Context {
                 }
             }
             if run_reason != BlockCode::None {
-                self.latch(run_reason);
+                self.latch(
+                    run_reason,
+                    BlockEvidence {
+                        calculated_frequency_hz: requested_hz,
+                        calculated_frequency_register: requested_raw,
+                        ..BlockEvidence::capture(
+                            input,
+                            config,
+                            state_before,
+                            fault_latched_before,
+                            fault_code_before,
+                            fault_record_code_before,
+                        )
+                    },
+                );
             }
         }
 
         if self.state().active() && base_reason != BlockCode::None {
-            self.latch(base_reason);
+            self.latch(
+                base_reason,
+                BlockEvidence::capture(
+                    input,
+                    config,
+                    state_before,
+                    fault_latched_before,
+                    fault_code_before,
+                    fault_record_code_before,
+                ),
+            );
+        }
+        if self.state() == State::Running
+            && input.run_request
+            && input.machine_enabled
+            && is_running
+            && !direction_feedback_matches
+        {
+            self.latch(
+                BlockCode::DirectionFeedback,
+                BlockEvidence::capture(
+                    input,
+                    config,
+                    state_before,
+                    fault_latched_before,
+                    fault_code_before,
+                    fault_record_code_before,
+                ),
+            );
         }
         if (!input.run_request || !input.machine_enabled) && self.state().active() {
             self.set_state(State::Stopping);
@@ -235,7 +324,16 @@ impl Context {
                 self.held_target_hz = requested_hz;
                 output.given_frequency = self.held_frequency;
                 let frequency_error = (actual_hz - self.held_target_hz).abs();
-                if is_running && frequency_error <= config.at_speed_tolerance_hz {
+                // This installation's physically verified mapping is:
+                // LinuxCNC M3/CW -> H100 Reverse and LinuxCNC M4/CCW ->
+                // H100 Forward.  Do not report a requested direction ready
+                // merely because the drive is rotating at the requested
+                // frequency; 0210H must also report the selected H100
+                // direction that corresponds to that request.
+                if is_running
+                    && direction_feedback_matches
+                    && frequency_error <= config.at_speed_tolerance_hz
+                {
                     self.set_state(State::Running);
                 } else {
                     self.set_state(State::Starting);
@@ -272,20 +370,42 @@ impl Context {
 
         output.forward_running = is_running
             && matches!(self.state(), State::Starting | State::Running)
+            && direction_feedback_matches
             && !self.held_reverse;
         output.reverse_running = is_running
             && matches!(self.state(), State::Starting | State::Running)
+            && direction_feedback_matches
             && self.held_reverse;
         output.ready = base_reason == BlockCode::None && !self.fault_latched;
         output.at_speed = !input.run_request || self.state() == State::Running;
         output.fault_latched = self.fault_latched;
         output.fault_code = self.fault_code;
-        output.block_code = if input.run_request {
-            run_reason as u32
+        let block_code = if input.run_request {
+            run_reason.wire_code()
         } else {
-            base_reason as u32
+            base_reason.wire_code()
         };
+        output.block_code = block_code;
         output.state = self.state as u32;
+        output.fault_record = self.fault_record;
+        output.block_record = BlockCode::from_wire_code(block_code)
+            .filter(|code| *code != BlockCode::None)
+            .map(|code| BlockRecord {
+                code,
+                evidence: BlockEvidence {
+                    calculated_frequency_hz: requested_hz,
+                    calculated_frequency_register: requested_raw,
+                    ..BlockEvidence::capture(
+                        input,
+                        config,
+                        state_before,
+                        fault_latched_before,
+                        fault_code_before,
+                        fault_record_code_before,
+                    )
+                },
+            });
+        output.state_kind = self.state();
         output.target_frequency_hz = self.held_target_hz;
         output
     }

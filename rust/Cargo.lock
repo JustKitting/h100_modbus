@@ -3,12 +3,20 @@
 version = 4
 
 [[package]]
+name = "dmc2-diagnostics"
+version = "0.1.0"
+
+[[package]]
 name = "dmc2-hal-sys"
 version = "0.1.0"
+dependencies = [
+ "dmc2-diagnostics",
+]
 
 [[package]]
 name = "h100-spindle"
 version = "0.1.0"
 dependencies = [
+ "dmc2-diagnostics",
  "dmc2-hal-sys",
 ]

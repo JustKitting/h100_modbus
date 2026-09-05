@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+export PYTHONDONTWRITEBYTECODE=1
 
 project_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
 
@@ -43,7 +44,6 @@ env RUSTFLAGS=-Dwarnings \
 
 python_trace_dir="${test_build_dir}/python-coverage"
 mkdir -p -- "${python_trace_dir}"
-PYTHONDONTWRITEBYTECODE=1 \
 PYTHONPATH="${project_dir}/src/protocol" \
 python3 -m trace \
     --count --missing --summary --coverdir "${python_trace_dir}" \

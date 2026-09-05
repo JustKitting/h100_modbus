@@ -174,6 +174,9 @@ values:
 - `F014/F015`: acceleration/deceleration time in `0.1 second` units.
 - `F024=1`: the panel STOP key remains valid while `F001=2`.
 - `0200H=0001H`: the manual's forward-run example.
+- `0200H=0002H`: the explicit forward-direction command, from bit 1's mapping
+  to parameter address `0049H`. Unlike the generic `0001H` operation command,
+  this clears a previously latched reverse selection.
 - `0200H=0004H`: reverse operation, from bit 2's mapping to parameter address
   `004AH`.
 - `0200H=0008H`: STOP, from bit 3's mapping to parameter address `004BH`.
@@ -201,10 +204,15 @@ output capability.
   `0201H` reads back exactly, then apply the physically verified installation
   mapping: LinuxCNC `M3` (standard mill CW) writes the H100 reverse value
   `0200H=0004H`, while LinuxCNC `M4` (standard mill CCW) writes the H100
-  forward value `0200H=0001H`.
+  explicit forward value `0200H=0002H`.
 - A new `S<rpm>` during operation changes only `0201H`; LinuxCNC's
   `spindle.0.at-speed` remains false until live output frequency reaches the
   new target.
+- `forward-running`, `reverse-running`, and `at-speed` require H100 `0210H`
+  direction status to match the requested, physically verified direction; raw
+  rotation at the requested frequency cannot satisfy those outputs. If that
+  direction status changes after a running state was confirmed, the sequencer
+  latches `DIRECTION_FEEDBACK_MISMATCH` and writes STOP.
 - With no RUN request, `spindle.0.at-speed` is true in the conventional
   LinuxCNC stopped state. As soon as M3/M4 requests RUN it becomes false and
   cannot return true until the sequencer reaches RUNNING with live output

@@ -8,10 +8,13 @@ use std::vec::Vec;
 
 use dmc2_hal_sys as hal;
 
-use crate::sequencer::{BlockCode, State, CONTROL_REVERSE, CONTROL_STOP, STATUS_IN_OPERATION};
+use crate::sequencer::{
+    BlockCode, MainStatusBit, State, VfdFaultFamily, VfdFaultPhase, CONTROL_REVERSE, CONTROL_STOP,
+    STATUS_IN_OPERATION,
+};
 
 const COMPONENT_ID: c_int = 41;
-const PIN_COUNT: usize = 47;
+const PIN_COUNT: usize = 169;
 const PARAMETER_COUNT: usize = 6;
 const INTERFACE_COUNT: usize = PIN_COUNT + PARAMETER_COUNT;
 
@@ -77,6 +80,7 @@ impl Calls {
 enum Kind {
     BitPin,
     FloatPin,
+    S32Pin,
     U32Pin,
     FloatParameter,
     U32Parameter,
@@ -220,6 +224,16 @@ extern "C" fn hal_pin_float_new(
     component_id: c_int,
 ) -> c_int {
     unsafe { register_pin(name, direction, pointer, component_id, Kind::FloatPin) }
+}
+
+#[no_mangle]
+extern "C" fn hal_pin_s32_new(
+    name: *const c_char,
+    direction: hal::hal_pin_dir_t,
+    pointer: *mut *mut i32,
+    component_id: c_int,
+) -> c_int {
+    unsafe { register_pin(name, direction, pointer, component_id, Kind::S32Pin) }
 }
 
 #[no_mangle]
@@ -416,8 +430,11 @@ fn expected_schema() -> BTreeSet<(String, Kind, u32)> {
         Kind::U32Pin,
         output,
         &[
+            "h100-spindle.diagnostic-snapshot-generation",
             "h100-spindle.main-control",
             "h100-spindle.given-frequency",
+            "h100-spindle.observed-current-fault",
+            "h100-spindle.observed-main-status",
             "h100-spindle.fault-code",
             "h100-spindle.block-code",
             "h100-spindle.state",
@@ -434,6 +451,111 @@ fn expected_schema() -> BTreeSet<(String, Kind, u32)> {
             "h100-spindle.reverse-running",
             "h100-spindle.at-speed",
             "h100-spindle.fault-latched",
+            "h100-spindle.fault-kind-unknown",
+            "h100-spindle.block-kind-unknown",
+            "h100-spindle.state-kind-unknown",
+            "h100-spindle.vfd-fault-present",
+            "h100-spindle.vfd-fault-known",
+            "h100-spindle.vfd-fault-unknown",
+            "h100-spindle.main-status-known",
+            "h100-spindle.main-status-unknown",
+            "h100-spindle.fault-data-b00",
+            "h100-spindle.fault-data-b01",
+            "h100-spindle.fault-data-b02",
+            "h100-spindle.fault-data-b03",
+            "h100-spindle.fault-data-b04",
+            "h100-spindle.fault-data-b05",
+            "h100-spindle.fault-data-b06",
+            "h100-spindle.fault-data-b07",
+            "h100-spindle.fault-data-b08",
+            "h100-spindle.fault-data-b09",
+        ],
+    );
+    for code in BlockCode::DIAGNOSTICS {
+        add(
+            &mut schema,
+            Kind::BitPin,
+            output,
+            &[&format!("h100-spindle.fault-kind-{}", code.wire_code())],
+        );
+    }
+    for code in BlockCode::ALL {
+        add(
+            &mut schema,
+            Kind::BitPin,
+            output,
+            &[&format!("h100-spindle.block-kind-{}", code.wire_code())],
+        );
+    }
+    for state in State::ALL {
+        add(
+            &mut schema,
+            Kind::BitPin,
+            output,
+            &[&format!("h100-spindle.state-kind-{}", state.wire_code())],
+        );
+    }
+    for family in VfdFaultFamily::ALL {
+        add(
+            &mut schema,
+            Kind::BitPin,
+            output,
+            &[&format!(
+                "h100-spindle.vfd-fault-family-{}",
+                family.base_code()
+            )],
+        );
+    }
+    for phase in VfdFaultPhase::ALL {
+        add(
+            &mut schema,
+            Kind::BitPin,
+            output,
+            &[&format!("h100-spindle.vfd-fault-phase-{}", phase.offset())],
+        );
+    }
+    for status in MainStatusBit::ALL {
+        add(
+            &mut schema,
+            Kind::BitPin,
+            output,
+            &[&format!(
+                "h100-spindle.main-status-bit-{}",
+                status.wire_code()
+            )],
+        );
+    }
+    add(
+        &mut schema,
+        Kind::S32Pin,
+        output,
+        &["h100-spindle.fault-data-s00"],
+    );
+    add(
+        &mut schema,
+        Kind::U32Pin,
+        output,
+        &[
+            "h100-spindle.main-status-reserved-mask",
+            "h100-spindle.fault-data-u00",
+            "h100-spindle.fault-data-u01",
+            "h100-spindle.fault-data-u02",
+            "h100-spindle.fault-data-u03",
+            "h100-spindle.fault-data-u04",
+            "h100-spindle.fault-data-u05",
+            "h100-spindle.fault-data-u06",
+            "h100-spindle.fault-data-u07",
+            "h100-spindle.fault-data-u08",
+            "h100-spindle.fault-data-u09",
+            "h100-spindle.fault-data-u10",
+            "h100-spindle.fault-data-u11",
+            "h100-spindle.fault-data-u12",
+            "h100-spindle.fault-data-u13",
+            "h100-spindle.fault-data-u14",
+            "h100-spindle.fault-data-u15",
+            "h100-spindle.fault-data-u16",
+            "h100-spindle.fault-data-u17",
+            "h100-spindle.fault-data-u18",
         ],
     );
     add(
@@ -443,6 +565,12 @@ fn expected_schema() -> BTreeSet<(String, Kind, u32)> {
         &[
             "h100-spindle.speed-feedback-rpm",
             "h100-spindle.target-frequency-hz",
+            "h100-spindle.fault-data-f00",
+            "h100-spindle.fault-data-f01",
+            "h100-spindle.fault-data-f02",
+            "h100-spindle.fault-data-f03",
+            "h100-spindle.fault-data-f04",
+            "h100-spindle.fault-data-f05",
         ],
     );
     add(
@@ -484,14 +612,52 @@ fn exact_hal_schema_and_initial_values_are_preserved() {
     assert_eq!(records.len(), INTERFACE_COUNT);
     assert_eq!(actual, expected_schema());
     assert_eq!(addresses.len(), records.len());
+    assert!(records
+        .iter()
+        .all(|record| record.name.len() <= hal::HAL_NAME_LEN as usize));
 
     assert!(get::<bool>("h100-spindle.link-fault"));
     assert_eq!(get::<u32>("h100-spindle.main-control"), CONTROL_STOP);
     assert_eq!(get::<u32>("h100-spindle.given-frequency"), 0);
+    assert_eq!(get::<u32>("h100-spindle.diagnostic-snapshot-generation"), 0);
+    assert_eq!(get::<u32>("h100-spindle.observed-current-fault"), 0);
+    assert_eq!(get::<u32>("h100-spindle.observed-main-status"), 0);
     assert!(get::<bool>("h100-spindle.at-speed"));
     assert!(!get::<bool>("h100-spindle.ready"));
     assert!(!get::<bool>("h100-spindle.fault-latched"));
     assert_eq!(get::<u32>("h100-spindle.state"), State::Stopped as u32);
+    for code in BlockCode::DIAGNOSTICS {
+        assert!(!get::<bool>(&format!(
+            "h100-spindle.fault-kind-{}",
+            code.wire_code()
+        )));
+    }
+    for code in BlockCode::ALL {
+        assert_eq!(
+            get::<bool>(&format!("h100-spindle.block-kind-{}", code.wire_code())),
+            code == BlockCode::None
+        );
+    }
+    for state in State::ALL {
+        assert_eq!(
+            get::<bool>(&format!("h100-spindle.state-kind-{}", state.wire_code())),
+            state == State::Stopped
+        );
+    }
+    assert!(!get::<bool>("h100-spindle.fault-kind-unknown"));
+    assert!(!get::<bool>("h100-spindle.block-kind-unknown"));
+    assert!(!get::<bool>("h100-spindle.state-kind-unknown"));
+    assert!(!get::<bool>("h100-spindle.vfd-fault-present"));
+    assert!(get::<bool>("h100-spindle.main-status-known"));
+    assert!(!get::<bool>("h100-spindle.main-status-unknown"));
+    assert_eq!(get::<u32>("h100-spindle.main-status-reserved-mask"), 0);
+    for status in MainStatusBit::ALL {
+        assert!(!get::<bool>(&format!(
+            "h100-spindle.main-status-bit-{}",
+            status.wire_code()
+        )));
+    }
+    assert!(!get::<bool>("h100-spindle.fault-data-b00"));
     assert_eq!(get::<f64>("h100-spindle.rated-rpm"), 24_000.0);
     assert_eq!(get::<f64>("h100-spindle.minimum-rpm"), 0.0);
     assert_eq!(get::<f64>("h100-spindle.maximum-rpm"), 24_000.0);
@@ -526,10 +692,20 @@ fn hal_inputs_drive_the_exact_start_run_speed_change_and_stop_sequence() {
     callback();
     assert_eq!(get::<u32>("h100-spindle.state"), State::Starting as u32);
     assert_eq!(get::<u32>("h100-spindle.main-control"), CONTROL_REVERSE);
-    set("h100-spindle.main-status", STATUS_IN_OPERATION);
+    let clockwise_status = STATUS_IN_OPERATION
+        | MainStatusBit::Operation.wire_code()
+        | MainStatusBit::Reverse.wire_code();
+    set("h100-spindle.main-status", clockwise_status);
     set("h100-spindle.output-frequency-decihz", 2_000_u32);
     callback();
     assert_eq!(get::<u32>("h100-spindle.state"), State::Running as u32);
+    assert!(get::<bool>("h100-spindle.main-status-known"));
+    assert_eq!(
+        get::<u32>("h100-spindle.observed-main-status"),
+        clockwise_status
+    );
+    assert!(get::<bool>("h100-spindle.main-status-bit-4"));
+    assert!(get::<bool>("h100-spindle.main-status-bit-8"));
     assert!(get::<bool>("h100-spindle.running"));
     assert!(get::<bool>("h100-spindle.forward-running"));
     assert!(get::<bool>("h100-spindle.at-speed"));
@@ -559,6 +735,66 @@ fn hal_inputs_drive_the_exact_start_run_speed_change_and_stop_sequence() {
 }
 
 #[test]
+fn idle_block_publishes_the_evidence_that_identifies_it() {
+    let _guard = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    start_component();
+    set_valid_idle_interface();
+    set("h100-spindle.link-fault", true);
+    callback();
+
+    assert!(!get::<bool>("h100-spindle.fault-latched"));
+    assert_eq!(
+        get::<u32>("h100-spindle.block-code"),
+        BlockCode::Link.wire_code()
+    );
+    assert!(get::<bool>("h100-spindle.fault-data-b00"));
+    assert!(get::<bool>("h100-spindle.fault-data-b08"));
+    assert_eq!(
+        get::<u32>("h100-spindle.fault-data-u02"),
+        2,
+        "the block evidence must be the current input snapshot"
+    );
+    rtapi_app_exit();
+}
+
+#[test]
+fn every_h100_main_status_bit_is_named_and_reserved_bits_remain_explicitly_unknown() {
+    let _guard = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    start_component();
+    set_valid_idle_interface();
+
+    let all_known = MainStatusBit::KNOWN_MASK;
+    set("h100-spindle.main-status", all_known);
+    callback();
+    assert!(get::<bool>("h100-spindle.main-status-known"));
+    assert!(!get::<bool>("h100-spindle.main-status-unknown"));
+    assert_eq!(get::<u32>("h100-spindle.main-status-reserved-mask"), 0);
+    for status in MainStatusBit::ALL {
+        assert!(get::<bool>(&format!(
+            "h100-spindle.main-status-bit-{}",
+            status.wire_code()
+        )));
+    }
+
+    set("h100-spindle.main-status", 0x8108_u32);
+    callback();
+    assert!(!get::<bool>("h100-spindle.main-status-known"));
+    assert!(get::<bool>("h100-spindle.main-status-unknown"));
+    assert_eq!(get::<u32>("h100-spindle.main-status-reserved-mask"), 0x8100);
+    assert!(get::<bool>("h100-spindle.main-status-bit-8"));
+    for status in MainStatusBit::ALL {
+        assert_eq!(
+            get::<bool>(&format!(
+                "h100-spindle.main-status-bit-{}",
+                status.wire_code()
+            )),
+            0x0008 & status.wire_code() != 0
+        );
+    }
+    rtapi_app_exit();
+}
+
+#[test]
 fn every_modbus_disabled_input_blocks_and_faults_the_run_request() {
     let _guard = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
     for index in 0..13 {
@@ -583,9 +819,64 @@ fn every_modbus_disabled_input_blocks_and_faults_the_run_request() {
             get::<u32>("h100-spindle.fault-code"),
             BlockCode::CommandDisabled as u32
         );
+        assert!(get::<bool>(&format!(
+            "h100-spindle.fault-kind-{}",
+            BlockCode::CommandDisabled.wire_code()
+        )));
+        assert!(get::<bool>(&format!(
+            "h100-spindle.block-kind-{}",
+            BlockCode::CommandDisabled.wire_code()
+        )));
+        assert!(get::<bool>("h100-spindle.fault-data-b00"));
+        assert!(get::<bool>("h100-spindle.fault-data-b09"));
+        assert!(get::<bool>("h100-spindle.fault-data-b03"));
+        assert!(get::<bool>("h100-spindle.fault-data-b04"));
+        assert_eq!(get::<f64>("h100-spindle.fault-data-f00"), 12_000.0);
         assert_eq!(get::<u32>("h100-spindle.main-control"), CONTROL_STOP);
         rtapi_app_exit();
     }
+}
+
+#[test]
+fn h100_current_fault_is_exposed_as_source_named_family_phase_or_explicit_unknown() {
+    let _guard = TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner());
+    start_component();
+    set_valid_idle_interface();
+
+    set("h100-spindle.current-fault", 65_u32);
+    callback();
+    assert_eq!(get::<u32>("h100-spindle.diagnostic-snapshot-generation"), 2);
+    assert_eq!(get::<u32>("h100-spindle.observed-current-fault"), 65);
+    assert!(get::<bool>("h100-spindle.vfd-fault-present"));
+    assert!(get::<bool>("h100-spindle.vfd-fault-known"));
+    assert!(!get::<bool>("h100-spindle.vfd-fault-unknown"));
+    assert!(get::<bool>("h100-spindle.vfd-fault-family-64"));
+    assert!(get::<bool>("h100-spindle.vfd-fault-phase-1"));
+    assert!(get::<bool>(&format!(
+        "h100-spindle.block-kind-{}",
+        BlockCode::VfdFault.wire_code()
+    )));
+
+    set("h100-spindle.current-fault", 7_u32);
+    callback();
+    assert_eq!(get::<u32>("h100-spindle.diagnostic-snapshot-generation"), 4);
+    assert_eq!(get::<u32>("h100-spindle.observed-current-fault"), 7);
+    assert!(get::<bool>("h100-spindle.vfd-fault-present"));
+    assert!(!get::<bool>("h100-spindle.vfd-fault-known"));
+    assert!(get::<bool>("h100-spindle.vfd-fault-unknown"));
+    for family in VfdFaultFamily::ALL {
+        assert!(!get::<bool>(&format!(
+            "h100-spindle.vfd-fault-family-{}",
+            family.base_code()
+        )));
+    }
+    for phase in VfdFaultPhase::ALL {
+        assert!(!get::<bool>(&format!(
+            "h100-spindle.vfd-fault-phase-{}",
+            phase.offset()
+        )));
+    }
+    rtapi_app_exit();
 }
 
 #[test]
@@ -650,7 +941,7 @@ fn every_lifecycle_failure_is_returned_and_cleaned_up() {
         MESSAGES.lock().expect("message lock").as_slice(),
         &[(
             hal::msg_level_t_RTAPI_MSG_ERR,
-            "h100_spindle: ERROR: hal_exit() failed\n".to_string()
+            "h100_spindle: %s (raw=%d, call=%s): %s; action: %s\n".to_string()
         )]
     );
 }
