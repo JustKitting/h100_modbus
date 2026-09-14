@@ -10,5 +10,10 @@ build = "build.rs"
 name = "h100_spindle"
 crate-type = ["cdylib", "rlib"]
 
+[features]
+default = ["realtime-component"]
+realtime-component = ["dep:dmc2-hal-sys"]
+
 [dependencies]
-dmc2-hal-sys = { path = "../../../../linuxcnc_dmc2/rust/crates/dmc2-hal-sys" }
+dmc2-diagnostics = { path = "../../../../linuxcnc_dmc2/rust/crates/dmc2-diagnostics" }
+dmc2-hal-sys = { path = "../../../../linuxcnc_dmc2/rust/crates/dmc2-hal-sys", optional = true }

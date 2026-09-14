@@ -10,14 +10,17 @@ if str(PROTOCOL_DIR) not in sys.path:
     sys.path.insert(0, str(PROTOCOL_DIR))
 
 from h100_protocol import (
-    CONTROL_RUN,
+    CONTROL_FORWARD,
     CONTROL_STOP,
     FUNCTION_READ_HOLDING_REGISTERS,
     FUNCTION_READ_INPUT_REGISTERS,
+    H100FaultDiagnostic,
     H100ProtocolError,
     REGISTER_GIVEN_FREQUENCY,
     append_crc,
     crc16_modbus,
+    decode_h100_fault,
+    decode_h100_modbus_exception,
     decide_forward_command,
     encode_frequency_hz,
     parse_register_response,
@@ -101,7 +104,7 @@ class H100ProtocolTests(unittest.TestCase):
             link_fault=False,
             vfd_fault_code=0,
         )
-        self.assertEqual(decision.control_word, CONTROL_RUN)
+        self.assertEqual(decision.control_word, CONTROL_FORWARD)
         self.assertEqual(decision.frequency_register, 300)
         self.assertTrue(decision.run_permitted)
 
@@ -241,7 +244,10 @@ class H100ProtocolTests(unittest.TestCase):
                 malformed_exception, function=FUNCTION_READ_INPUT_REGISTERS
             )
         exception = append_crc(b"\x01\x84\x02")
-        with self.assertRaisesRegex(H100ProtocolError, "exception 2"):
+        with self.assertRaisesRegex(
+            H100ProtocolError,
+            "H100_MODBUS_DATA_ADDRESS_INVALID.*raw=2.*exact H100 register",
+        ):
             parse_register_response(
                 exception, function=FUNCTION_READ_INPUT_REGISTERS
             )
@@ -300,7 +306,7 @@ class H100ProtocolTests(unittest.TestCase):
         cases = (
             ({"run_requested": False}, "stop requested"),
             ({"link_fault": True}, "link fault"),
-            ({"vfd_fault_code": 7}, "fault code 7"),
+            ({"vfd_fault_code": 7}, "UNKNOWN_H100_VFD_CURRENT_FAULT(raw=7)"),
             ({"f001": 1}, "F001"),
             ({"f002": 1}, "F002"),
             ({"f024": 0}, "F024"),
@@ -326,6 +332,106 @@ class H100ProtocolTests(unittest.TestCase):
                 self.assertEqual(decision.frequency_register, 0)
                 self.assertFalse(decision.run_permitted)
                 self.assertIn(reason, decision.reason)
+
+    def test_every_manual_current_fault_code_is_named_and_all_others_are_explicit_unknowns(self) -> None:
+        families = ((64, "E.OC"), (80, "E.oU"), (88, "E.Lu"), (92, "E.oH"), (96, "E.oL"), (100, "E.oA"), (104, "E.oT"))
+        suffixes = ("S", "A", "d", "n")
+        for base, family in families:
+            for offset, suffix in enumerate(suffixes):
+                diagnostic = decode_h100_fault(base + offset)
+                self.assertTrue(diagnostic.source_known)
+                self.assertEqual(
+                    diagnostic.name,
+                    f"H100_{family.replace('.', '_').upper()}_{suffix.upper()}",
+                )
+                self.assertEqual(diagnostic.drive_display, f"{family}.{suffix}")
+                self.assertIn(
+                    f"drive_display={family}.{suffix}", diagnostic.operator_text()
+                )
+                self.assertIn(f"raw={base + offset}", diagnostic.operator_text())
+                self.assertIn("action:", diagnostic.operator_text())
+                self.assertIn("keep the spindle stopped", diagnostic.operator_text())
+                self.assertNotIn("fault-information table", diagnostic.operator_text())
+        for raw in (0, 1, 63, 68, 79, 84, 87, 108, 0xFFFF):
+            diagnostic = decode_h100_fault(raw)
+            self.assertFalse(diagnostic.source_known)
+            self.assertIn(
+                f"UNKNOWN_H100_VFD_CURRENT_FAULT(raw={raw})", diagnostic.name
+            )
+            self.assertEqual(diagnostic.operator_text().count(f"raw={raw}"), 1)
+
+        for invalid in (-1, 0x10000, True, "64"):
+            with self.subTest(invalid=invalid):
+                with self.assertRaisesRegex(H100ProtocolError, "fit in 16 bits"):
+                    decode_h100_fault(invalid)
+
+    def test_every_h100_modbus_exception_is_named_actionable_and_unknowns_retain_raw(self) -> None:
+        expected = {
+            1: "H100_MODBUS_FUNCTION_UNSUPPORTED",
+            2: "H100_MODBUS_DATA_ADDRESS_INVALID",
+            3: "H100_MODBUS_DATA_VALUE_OUT_OF_RANGE",
+            4: "H100_MODBUS_OPERATION_FAILED",
+        }
+        for raw, name in expected.items():
+            diagnostic = decode_h100_modbus_exception(raw)
+            self.assertTrue(diagnostic.source_known)
+            self.assertEqual(diagnostic.name, name)
+            self.assertIn(f"raw={raw}", diagnostic.operator_text())
+            self.assertIn("action:", diagnostic.operator_text())
+        for raw in (0, 5, 0xFF):
+            diagnostic = decode_h100_modbus_exception(raw)
+            self.assertFalse(diagnostic.source_known)
+            self.assertEqual(
+                diagnostic.name, f"UNKNOWN_H100_MODBUS_EXCEPTION(raw={raw})"
+            )
+            self.assertIn(f"raw={raw}", diagnostic.operator_text())
+            self.assertEqual(diagnostic.operator_text().count(f"raw={raw}"), 1)
+
+        for invalid in (-1, 0x100, True, "2"):
+            with self.subTest(invalid=invalid):
+                with self.assertRaisesRegex(H100ProtocolError, "fit in 8 bits"):
+                    decode_h100_modbus_exception(invalid)
+
+    def test_diagnostic_objects_cannot_bypass_the_global_contract(self) -> None:
+        valid = {
+            "raw": 1,
+            "name": "H100_TEST_FAILURE",
+            "drive_display": None,
+            "summary": "the test condition failed",
+            "action": "retain the test evidence",
+            "source_known": True,
+        }
+        for change in (
+            {"name": "bad-name"},
+            {"summary": ""},
+            {"action": ""},
+            {"drive_display": ""},
+        ):
+            with self.subTest(change=change):
+                with self.assertRaises(ValueError):
+                    H100FaultDiagnostic(**(valid | change))
+        with self.assertRaises(TypeError):
+            H100FaultDiagnostic(**(valid | {"raw": "1"}))
+        with self.assertRaises(ValueError):
+            H100FaultDiagnostic(
+                **(
+                    valid
+                    | {
+                        "name": "not-an-unknown-identity",
+                        "source_known": False,
+                    }
+                )
+            )
+        with self.assertRaises(ValueError):
+            H100FaultDiagnostic(
+                **(
+                    valid
+                    | {
+                        "name": "UNKNOWN_H100_TEST_FAILURE(raw=2)",
+                        "source_known": False,
+                    }
+                )
+            )
 
     def test_decision_gate_rejects_invalid_decimal_configuration(self) -> None:
         for changes in (

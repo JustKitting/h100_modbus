@@ -6,6 +6,7 @@ frames can be verified without opening HAL, the Mesa card, or the VFD link.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
@@ -62,6 +63,210 @@ FUNCTION_WRITE_SINGLE_REGISTER = 0x06
 
 class H100ProtocolError(ValueError):
     """Raised when a value or RTU frame is invalid for this controller."""
+
+
+@dataclass(frozen=True)
+class H100FaultDiagnostic:
+    raw: int
+    name: str
+    drive_display: str | None
+    summary: str
+    action: str
+    source_known: bool
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.raw, int) or isinstance(self.raw, bool):
+            raise TypeError("diagnostic raw value must be an integer")
+        known_identity = re.fullmatch(r"[A-Z][A-Z0-9_]*", self.name)
+        unknown_identity = re.fullmatch(
+            r"UNKNOWN_[A-Z][A-Z0-9_]*\(raw=(-?\d+)\)", self.name
+        )
+        if self.source_known:
+            if known_identity is None:
+                raise ValueError("known diagnostic identity is not canonical")
+        elif unknown_identity is None or int(unknown_identity.group(1)) != self.raw:
+            raise ValueError(
+                "unknown diagnostic identity must retain its exact raw value"
+            )
+        if not self.summary:
+            raise ValueError("diagnostic cause must be present")
+        if not self.action:
+            raise ValueError("diagnostic action must be present")
+        if self.drive_display == "":
+            raise ValueError("drive display must be absent or nonempty")
+
+    def operator_text(self) -> str:
+        display = (
+            "" if self.drive_display is None else f", drive_display={self.drive_display}"
+        )
+        raw = "" if not self.source_known else f" (raw={self.raw}{display})"
+        return (
+            f"{self.name}{raw}: {self.summary}; "
+            f"action: {self.action}"
+        )
+
+
+# Exact input-register 000A table from H100 manual V1.8, printed page 84.
+# Each listed base is followed by the four source-defined suffixes S/A/d/n.
+_H100_FAULT_FAMILIES = (
+    (64, "E.OC"),
+    (80, "E.oU"),
+    (88, "E.Lu"),
+    (92, "E.oH"),
+    (96, "E.oL"),
+    (100, "E.oA"),
+    (104, "E.oT"),
+)
+_H100_FAULT_SUFFIXES = ("S", "A", "d", "n")
+_H100_FAULT_PHASE_CONTEXT = {
+    "S": "at stop",
+    "A": "during acceleration",
+    "d": "during deceleration",
+    "n": "at constant speed",
+}
+_H100_FAULT_CAUSE = {
+    "E.OC": "detected over-current",
+    "E.oU": "detected over-voltage",
+    "E.Lu": "detected low input voltage",
+    "E.oH": "inverter overheated",
+    "E.oL": "inverter overload protection tripped",
+    "E.oA": "motor-overload protection tripped",
+    "E.oT": "detected motor over-torque",
+}
+_H100_FAULT_ACTION = {
+    "E.oU": (
+        "keep the spindle stopped; check input voltage for abnormal changes and "
+        "lengthen deceleration or verify the specified braking provision before reset"
+    ),
+    "E.Lu": (
+        "keep the spindle stopped; verify input voltage, supply continuity, and "
+        "any sudden load change before reset"
+    ),
+    "E.oH": (
+        "keep the spindle stopped; clear blocked cooling airflow or fins, verify fan "
+        "operation, ambient temperature, and ventilation, and allow the drive to "
+        "cool before reset"
+    ),
+    "E.oL": (
+        "keep the spindle stopped; check for a jammed mechanical load, verify drive "
+        "capacity, and correct the V/F configuration before reset"
+    ),
+    "E.oA": (
+        "keep the spindle stopped; check for sudden or excessive mechanical load, "
+        "verify motor sizing and condition, and inspect supply-voltage stability "
+        "before reset"
+    ),
+    "E.oT": (
+        "keep the spindle stopped; inspect the mechanical load for a jam or sudden "
+        "torque change and verify that the motor is correctly sized before reset"
+    ),
+}
+
+
+def _over_current_action(suffix: str) -> str:
+    if suffix == "A":
+        return (
+            "keep the spindle stopped; check motor/output wiring for shorts and "
+            "insulation failure, check load and drive sizing, and lengthen "
+            "acceleration before reset"
+        )
+    if suffix == "n":
+        return (
+            "keep the spindle stopped; check motor/output wiring, a blocked spindle "
+            "or sudden load change, drive sizing, and supply-voltage changes before reset"
+        )
+    return (
+        "keep the spindle stopped; check motor/output wiring for shorts and insulation "
+        "failure, lengthen deceleration, and check drive sizing and DC-braking "
+        "settings before reset"
+    )
+
+
+def decode_h100_fault(raw: int) -> H100FaultDiagnostic:
+    """Describe a current-fault register without inventing unknown meanings."""
+
+    if not isinstance(raw, int) or isinstance(raw, bool) or not 0 <= raw <= 0xFFFF:
+        raise H100ProtocolError("H100 current-fault value must fit in 16 bits")
+    for base, family in _H100_FAULT_FAMILIES:
+        offset = raw - base
+        if 0 <= offset < len(_H100_FAULT_SUFFIXES):
+            display = f"{family}.{_H100_FAULT_SUFFIXES[offset]}"
+            family_identity = family.replace(".", "_").upper()
+            phase_identity = _H100_FAULT_SUFFIXES[offset].upper()
+            return H100FaultDiagnostic(
+                raw=raw,
+                name=f"H100_{family_identity}_{phase_identity}",
+                drive_display=display,
+                summary=(
+                    f"the H100 {_H100_FAULT_CAUSE[family]} "
+                    f"{_H100_FAULT_PHASE_CONTEXT[_H100_FAULT_SUFFIXES[offset]]}"
+                ),
+                action=(
+                    _over_current_action(_H100_FAULT_SUFFIXES[offset])
+                    if family == "E.OC"
+                    else _H100_FAULT_ACTION[family]
+                ),
+                source_known=True,
+            )
+    return H100FaultDiagnostic(
+        raw=raw,
+        name=f"UNKNOWN_H100_VFD_CURRENT_FAULT(raw={raw})",
+        drive_display=None,
+        summary="value is absent from the verified H100 manual V1.8 fault-code table",
+        action="retain the raw value and consult the drive manufacturer before reset",
+        source_known=False,
+    )
+
+
+# Exact H100 V1.8 abnormal-response codes from printed page 90.
+_H100_MODBUS_EXCEPTIONS = {
+    0x01: (
+        "H100_MODBUS_FUNCTION_UNSUPPORTED",
+        "the H100 cannot process the requested Modbus function",
+        "verify that the request uses a function supported by H100 V1.8 and the correct frame format",
+    ),
+    0x02: (
+        "H100_MODBUS_DATA_ADDRESS_INVALID",
+        "the H100 rejected the requested Modbus data address",
+        "verify the exact H100 register address and requested span before retrying",
+    ),
+    0x03: (
+        "H100_MODBUS_DATA_VALUE_OUT_OF_RANGE",
+        "the H100 rejected one or more Modbus data values as out of range",
+        "verify every transmitted value against the target H100 register range before retrying",
+    ),
+    0x04: (
+        "H100_MODBUS_OPERATION_FAILED",
+        "the H100 could not perform the operation, such as writing a read-only or run-locked parameter",
+        "keep the spindle stopped and verify register writability and required drive state before retrying",
+    ),
+}
+
+
+def decode_h100_modbus_exception(raw: int) -> H100FaultDiagnostic:
+    """Describe an H100 abnormal-response byte without a separate code lookup."""
+
+    if not isinstance(raw, int) or isinstance(raw, bool) or not 0 <= raw <= 0xFF:
+        raise H100ProtocolError("H100 Modbus exception value must fit in 8 bits")
+    known = _H100_MODBUS_EXCEPTIONS.get(raw)
+    if known is None:
+        return H100FaultDiagnostic(
+            raw=raw,
+            name=f"UNKNOWN_H100_MODBUS_EXCEPTION(raw={raw})",
+            drive_display=None,
+            summary="value is absent from the verified H100 V1.8 abnormal-response table",
+            action="retain the raw response frame and verify the exact drive manual and firmware before retrying",
+            source_known=False,
+        )
+    name, summary, action = known
+    return H100FaultDiagnostic(
+        raw=raw,
+        name=name,
+        drive_display=None,
+        summary=summary,
+        action=action,
+        source_known=True,
+    )
 
 
 def crc16_modbus(data: bytes) -> int:
@@ -171,7 +376,7 @@ def parse_register_response(
     if frame[1] == (function | 0x80):
         if len(frame) != 5:
             raise H100ProtocolError("malformed Modbus exception response")
-        raise H100ProtocolError(f"H100 returned Modbus exception {frame[2]}")
+        raise H100ProtocolError(decode_h100_modbus_exception(frame[2]).operator_text())
     if frame[1] != function:
         raise H100ProtocolError("response function does not match request")
     byte_count = frame[2]
@@ -237,7 +442,10 @@ def decide_forward_command(
         return SpindleDecision(CONTROL_STOP, 0, False, "Modbus link fault")
     if vfd_fault_code != 0:
         return SpindleDecision(
-            CONTROL_STOP, 0, False, f"H100 fault code {vfd_fault_code}"
+            CONTROL_STOP,
+            0,
+            False,
+            decode_h100_fault(vfd_fault_code).operator_text(),
         )
     if f001 != CONTROL_MODE_COMMUNICATION:
         return SpindleDecision(CONTROL_STOP, 0, False, "F001 is not 2")
@@ -284,4 +492,6 @@ def decide_forward_command(
         )
 
     encoded = encode_frequency_hz(requested, f169=f169)
-    return SpindleDecision(CONTROL_RUN, encoded, True, "forward run permitted")
+    # Use the explicit Forward command. CONTROL_RUN leaves the H100's previous
+    # direction latched, so it cannot reliably reverse a prior reverse run.
+    return SpindleDecision(CONTROL_FORWARD, encoded, True, "forward run permitted")
